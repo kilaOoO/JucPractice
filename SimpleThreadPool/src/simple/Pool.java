@@ -8,5 +8,5 @@ public interface Pool {
 
     void execute(Runnable runnable);
     void shutDownNow();
-    void addWorker(Runnable runnable);
+    void addWorker(Runnable runnable,boolean core);
 }

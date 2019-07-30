@@ -1,8 +1,10 @@
 package simple;
 
 import java.util.HashSet;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingDeque;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
@@ -16,14 +18,14 @@ public class ThreadPoolExcutor implements Pool {
     //核心线程数
     private volatile int corePoolSize = 0;
     //工作线程数
-    private volatile int poolSize = 0;
+    private AtomicInteger workerCount = new AtomicInteger(0);
     //最大线程数
     private volatile int maximumPoolSize = 0;
-    private RejectExecutionHandler handler;
+    private volatile RejectExecutionHandler handler;
     private final ReentrantLock mainLock = new ReentrantLock();
 
     //出队阻塞 take,入队不阻塞 offer
-    private final BlockingQueue<Runnable> workQueue = new LinkedBlockingDeque<>();
+    private final BlockingQueue<Runnable> workQueue = new ArrayBlockingQueue<>(3);
     private final HashSet<Worker> workers = new HashSet<>();
 
     public ThreadPoolExcutor(int corePoolSize,int maximumPoolSize){
@@ -40,15 +42,15 @@ public class ThreadPoolExcutor implements Pool {
     @Override
     public void execute(Runnable runnable) {
         if(runnable == null) throw new NullPointerException();
-        if(poolSize>=corePoolSize){
-            if(!workQueue.offer(runnable) && poolSize<maximumPoolSize){
-                addWorker(runnable);
-            }else{
-                //拒绝策略
+        System.out.println(workQueue.size() + "&&" + workerCount.get());
+        if((workerCount.get()>=corePoolSize)){
+            if(!workQueue.offer(runnable) && workerCount.get()>=maximumPoolSize){
                 reject();
+            }else{
+                if(workerCount.get()<maximumPoolSize) addWorker(runnable,false);
             }
         }else {
-            addWorker(runnable);
+            addWorker(runnable,true);
         }
 
     }
@@ -80,14 +82,14 @@ public class ThreadPoolExcutor implements Pool {
      * @param runnable
      */
     @Override
-    public void addWorker(Runnable runnable) {
+    public void addWorker(Runnable runnable,boolean core) {
         boolean workerAdded = false;
         final ReentrantLock mainLock = this.mainLock;
         Worker worker = new Worker(runnable);
         Thread t = worker.t;
         mainLock.lock();
-        if(poolSize<corePoolSize && RUNNING ==true) {
-            poolSize++;
+        if(workerCount.get()<(core?corePoolSize:maximumPoolSize) && RUNNING ==true) {
+            workerCount.getAndIncrement();
             workers.add(worker);
             workerAdded = true;
         }
