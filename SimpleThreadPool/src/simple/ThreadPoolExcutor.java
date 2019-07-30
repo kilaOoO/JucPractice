@@ -1,3 +1,5 @@
+package simple;
+
 import java.util.HashSet;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingDeque;
@@ -6,30 +8,44 @@ import java.util.concurrent.locks.ReentrantLock;
 /**
  * @Author hbs
  * @Date 2019/7/26
+ * 线程池的简单实现
  */
 public class ThreadPoolExcutor implements Pool {
+    //运行状态
     private volatile boolean RUNNING = true;
+    //核心线程数
     private volatile int corePoolSize = 0;
+    //工作线程数
     private volatile int poolSize = 0;
+    //最大线程数
+    private volatile int maximumPoolSize = 0;
+    private RejectExecutionHandler handler;
     private final ReentrantLock mainLock = new ReentrantLock();
 
+    //出队阻塞 take,入队不阻塞 offer
     private final BlockingQueue<Runnable> workQueue = new LinkedBlockingDeque<>();
     private final HashSet<Worker> workers = new HashSet<>();
 
-    public ThreadPoolExcutor(int poolSize,int corePoolSize){
-        this.poolSize =poolSize;
+    public ThreadPoolExcutor(int corePoolSize,int maximumPoolSize){
+        this.handler = new RejectExecutionHandler();
         this.corePoolSize = corePoolSize;
+        this.maximumPoolSize = maximumPoolSize;
     }
 
 
+    /**
+     * 任务执行方法
+     * @param runnable
+     */
     @Override
     public void execute(Runnable runnable) {
         if(runnable == null) throw new NullPointerException();
         if(poolSize>=corePoolSize){
-            try {
-                workQueue.put(runnable);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
+            if(!workQueue.offer(runnable) && poolSize<maximumPoolSize){
+                addWorker(runnable);
+            }else{
+                //拒绝策略
+                reject();
             }
         }else {
             addWorker(runnable);
@@ -37,6 +53,9 @@ public class ThreadPoolExcutor implements Pool {
 
     }
 
+    /**
+     * 任务停止方法
+     */
     @Override
     public void shutDownNow() {
         RUNNING = false;
@@ -48,24 +67,40 @@ public class ThreadPoolExcutor implements Pool {
         Thread.currentThread().interrupt();
     }
 
+
+    /**
+     * 拒绝策略直接抛出异常
+     */
+    public void reject(){
+        handler.rejectedExecution();
+    }
+
+    /**
+     * 创建工作线程，并添加任务
+     * @param runnable
+     */
     @Override
     public void addWorker(Runnable runnable) {
+        boolean workerAdded = false;
         final ReentrantLock mainLock = this.mainLock;
-        Thread t = null;
+        Worker worker = new Worker(runnable);
+        Thread t = worker.t;
         mainLock.lock();
         if(poolSize<corePoolSize && RUNNING ==true) {
             poolSize++;
-            Worker worker = new Worker(runnable);
             workers.add(worker);
-            t = new Thread(worker);
-            worker.t = t;
+            workerAdded = true;
         }
         mainLock.unlock();
-        if(t!=null) {
+        if(workerAdded) {
             t.start();
         }
     }
 
+    /**
+     * 获取队列任务
+     * @return
+     */
     public Runnable getTask() {
         try {
             return  workQueue.take();
@@ -76,13 +111,18 @@ public class ThreadPoolExcutor implements Pool {
     }
 
 
+    /**
+     * 任务对象
+     */
     class Worker implements Runnable{
         Thread t;
         private Runnable firstTask;
         private final ReentrantLock runlock = new ReentrantLock();
         volatile long completedTasks;
         public Worker(Runnable firstTask){
+
             this.firstTask = firstTask;
+            t = ThreadFactory.newThread(this);
         }
 
 
@@ -97,11 +137,11 @@ public class ThreadPoolExcutor implements Pool {
         }
 
         public void runTask(Runnable task){
-            //final ReentrantLock runLock = this.runlock;
-            //runLock.lock();
+            final ReentrantLock runLock = this.runlock;
+            runLock.lock();
             task.run();
             completedTasks++;
-            //runLock.unlock();
+            runLock.unlock();
         }
 
     }

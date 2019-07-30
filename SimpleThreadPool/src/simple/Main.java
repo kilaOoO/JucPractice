@@ -1,7 +1,9 @@
+package simple;
+
 public class Main {
 
     public static void main(String[] args) {
-        ThreadPoolExcutor excutor = new ThreadPoolExcutor(0,3);
+        ThreadPoolExcutor excutor = new ThreadPoolExcutor(3);
         for(int i=0;i<10;i++){
             excutor.execute(new Runnable() {
                 @Override
